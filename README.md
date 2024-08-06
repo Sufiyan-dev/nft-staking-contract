@@ -97,3 +97,29 @@ The contract uses IERC20 and IERC721 interfaces for safe token transfers, ensuri
 The contract includes checks for ensuring the correct status of tokens and users, preventing unauthorized actions such as withdrawing more tokens than staked or claiming rewards too frequently.
 - Validation of Rewards:
 The contract checks the contract balance before minting rewards to ensure there are enough tokens to distribute, preventing underflow and unauthorized reward claims.
+
+## Staking Contract Tests
+
+### Scenarios - Reward
+
+1. **Scenario 1: Basic Rewards Calculation**
+   - Tests the basic reward calculation over different time periods without any intermediate reward claims.
+   - Steps:
+     1. Deploy contracts.
+     2. Mint and approve NFTs for users.
+     3. UserA stakes on day 1.
+     4. Advance time to day 30 and UserB stakes.
+     5. Advance time to day 60, update rewards, and check rewards on day 120.
+     6. Advance time to day 180, update rewards, and check rewards on day 360.
+
+2. **Scenario 2: Reward Claim and Continuation**
+   - Tests reward calculation and the effect of claiming rewards partway through the staking period.
+   - Steps:
+     1. Deploy contracts.
+     2. Mint and approve NFTs for users.
+     3. Ensure the staking contract has funds.
+     4. UserA stakes on day 1.
+     5. Advance time to day 30 and UserB stakes.
+     6. Advance time to day 60, update rewards, and check rewards on day 120.
+     7. Both users claim rewards.
+     8. Advance time to day 180, update rewards, and check rewards on day 360.
