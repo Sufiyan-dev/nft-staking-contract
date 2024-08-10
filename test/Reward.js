@@ -4,9 +4,9 @@ const { ethers, upgrades } = require("hardhat");
 
 describe("Staking Contract", function () {
 
-    const rewardsPerBlock = 10; // Initial rewards per block
-    const rewardsPerBlockDay60 = 20; // Rewards per block after day 60
-    const rewardsPerBlockDay180 = 30; // Rewards per block after day 180
+    const rewardsPerBlock = ethers.parseEther("10"); // Initial rewards per block
+    const rewardsPerBlockDay60 = ethers.parseEther("20"); // Rewards per block after day 60
+    const rewardsPerBlockDay180 = ethers.parseEther("30"); // Rewards per block after day 180
     const blocksPerDay = 24; // As per the case
 
     async function mineBlocks(numBlocks) {
@@ -14,6 +14,49 @@ describe("Staking Contract", function () {
           await network.provider.send("evm_mine");
         }
         console.log(`Mined ${numBlocks} blocks`);
+    }
+
+    // Helper functions to improve readability
+    async function calculateBlocksElapsed(stakeAtBlock) {
+        const currentBlock = await ethers.provider.getBlockNumber();
+        return Number(currentBlock) - Number(stakeAtBlock);
+    }
+    
+    async function calculateRewardsDay120(userA_blocksElapsed, userB_blocksElapsed) {
+        const buffer_userA_day120 = userA_blocksElapsed - 120 * blocksPerDay;
+        const buffer_userB_day120 = userB_blocksElapsed - 90 * blocksPerDay;
+    
+        const userA_rewards_day120 = BigInt(60 * blocksPerDay) * (rewardsPerBlockDay60) + BigInt(60 * blocksPerDay + buffer_userA_day120) * (rewardsPerBlock);
+        const userB_rewards_day120 = BigInt(60 * blocksPerDay) * (rewardsPerBlockDay60) + BigInt(30 * blocksPerDay + buffer_userB_day120) * (rewardsPerBlock);
+    
+        return [userA_rewards_day120, userB_rewards_day120];
+    }
+    
+    async function calculateBlocksElapsedDay360(userA_stakeAtBlock, userB_stakeAtBlock) {
+        const currentBlock_day360 = await ethers.provider.getBlockNumber();
+    
+        const userA_blocksElapsed_day360 = Number(currentBlock_day360) - Number(userA_stakeAtBlock);
+        const userB_blocksElapsed_day360 = Number(currentBlock_day360) - Number(userB_stakeAtBlock);
+    
+        return [userA_blocksElapsed_day360, userB_blocksElapsed_day360];
+    }
+    
+    async function calculateRewardsDay360(userA_blocksElapsed, userB_blocksElapsed) {
+        const buffer_userA_day360 = userA_blocksElapsed - 360 * blocksPerDay;
+        const buffer_userB_day360 = userB_blocksElapsed - 330 * blocksPerDay;
+
+        console.log(`Buffer userA Day360 ${buffer_userA_day360}`)
+        console.log(`Buffer userB Day360 ${buffer_userB_day360}`)
+    
+        const userA_rewards_day360 = BigInt(180 * blocksPerDay) * rewardsPerBlockDay180 +
+            BigInt((120 * blocksPerDay + 1)) * rewardsPerBlockDay60 +
+            BigInt(60 * blocksPerDay + 2) * rewardsPerBlock;
+    
+        const userB_rewards_day360 = BigInt(180 * blocksPerDay) * rewardsPerBlockDay180 +
+            BigInt(120 * blocksPerDay + 1) * rewardsPerBlockDay60 +
+            BigInt(30 * blocksPerDay + 1) * rewardsPerBlock;
+    
+        return [userA_rewards_day360, userB_rewards_day360];
     }
 
     const deployStakingFixture = async () => {
@@ -43,247 +86,93 @@ describe("Staking Contract", function () {
         return { staker, owner, userA, userB, rewardToken, stakingToken,rewardDelayPeriod, unbondingPeriod, rewardPerBlock };
     }
 
-    // it("should calculate rewards correctly for UserA and UserB", async function () {
-    //     const {staker, owner, userA, userB, stakingToken } = await loadFixture(deployStakingFixture);
-    //     // Mint NFTs to user1
-    //     await stakingToken.safeMint(userA.address, 1);
-    //     await stakingToken.safeMint(userB.address, 2);
-
-    //     // Approve staker contract to manage user's NFTs
-    //     await stakingToken.connect(userA).setApprovalForAll(staker.target, true);
-    //     await stakingToken.connect(userB).setApprovalForAll(staker.target, true);
-
-    //     // UserA stakes 1 NFT on day 1
-    //     await staker.connect(userA).stake([1]);
-    
-    //     // Fast forward to day 30 (mining blocks)
-    //     await mineBlocks(29 * blocksPerDay);
-    //     // UserB stakes 1 NFT on day 30
-    //     await staker.connect(userB).stake([2]);
-    
-    //     // Fast forward to day 60 and update rewards to 20 per block (mining blocks)
-    //     for (let i = 0; i < 30 * blocksPerDay; i++) {
-    //         await ethers.provider.send("evm_mine");
-    //     }
-    //     await staker.connect(owner).setRewardPerBlock(rewardsPerBlockDay60);
-    
-    //     // Fast forward to day 120 (mining blocks)
-    //     await mineBlocks(60 * blocksPerDay);
-
-    //     // Calculate expected rewards up to day 120
-    //     const userA_rewards_day120 = (29 * blocksPerDay * rewardsPerBlock) + (60 * blocksPerDay * rewardsPerBlockDay60);
-    //     const userB_rewards_day120 = (60 * blocksPerDay * rewardsPerBlockDay60);
-    
-    //     // Get actual rewards
-    //     const userA_actualRewards_day120 = await staker.getStakeInfo(userA.address);
-    //     const userB_actualRewards_day120 = await staker.getStakeInfo(userB.address);
-
-    //     expect(userA_actualRewards_day120[1]).to.equal(userA_rewards_day120);
-    //     expect(userB_actualRewards_day120[1]).to.equal(userB_rewards_day120);
-    
-    //     await staker.connect(owner).setRewardPerBlock(rewardsPerBlockDay180);
-
-    //     // Calculate expected rewards up to day 360
-    //     const userA_rewards_day360 = userA_rewards_day120 + (180 * blocksPerDay * rewardsPerBlockDay180);
-    //     const userB_rewards_day360 = userB_rewards_day120 + (180 * blocksPerDay * rewardsPerBlockDay180);
-    
-    //     // Get actual rewards
-    //     const userA_actualRewards_day360 = await staker.getStakeInfo(userA.address);
-    //     const userB_actualRewards_day360 = await staker.getStakeInfo(userB.address);
-    
-    //     expect(userA_actualRewards_day360[1]).to.equal(userA_rewards_day360);
-    //     expect(userB_actualRewards_day360[1]).to.equal(userB_rewards_day360);
-    // })
     describe("Scenario 1: Basic Rewards Calculation", function () {
         it("should calculate reward correctly for both users", async function () {
-            const {staker, owner, userA, userB, stakingToken } = await loadFixture(deployStakingFixture);
-    
-            // Mint NFTs to user1
+            const { staker, owner, userA, userB, stakingToken } = await loadFixture(deployStakingFixture);
+        
+            // Mint NFTs to users
             await stakingToken.safeMint(userA.address, 1);
+            console.log(`User A (${userA.address}) minted token with ID 1`);
+        
             await stakingToken.safeMint(userB.address, 2);
-    
+            console.log(`User B (${userB.address}) minted token with ID 2`);
+        
             // Approve staker contract to manage user's NFTs
             await stakingToken.connect(userA).setApprovalForAll(staker.target, true);
+            console.log(`User A (${userA.address}) approved token with ID 1 to Staker contract ${staker.target}`);
+        
             await stakingToken.connect(userB).setApprovalForAll(staker.target, true);
-    
-            // UserA stakes 1 NFT on day 1
+            console.log(`User B (${userB.address}) approved token with ID 2 to Staker contract ${staker.target}`);
+        
+            // User A stakes 1 NFT on day 1
             await staker.connect(userA).stake([1]);
-    
-            // Fast forward to day 30 (mining blocks)
+            console.log(`User A (${userA.address}) staked token with ID 1`);
+        
+            // Fast forward to day 30 (mining blocks) and then User B stakes 1 NFT
             await mineBlocks(30 * blocksPerDay);
-            // UserB stakes 1 NFT on day 30
             await staker.connect(userB).stake([2]);
-    
-            // Fast forward to day 60 and update rewards to 20 per block (mining blocks)
+            console.log(`User B (${userB.address}) staked token with ID 2`);
+        
+            // Fast forward to day 60 and update rewards per block
             await mineBlocks(30 * blocksPerDay);
-           
-            // Updated reward per block
             await staker.connect(owner).setRewardPerBlock(rewardsPerBlockDay60);
-    
+            console.log(`Owner (${owner.address}) updated reward per block to ${rewardsPerBlockDay60}`);
+        
             // Fast forward to day 120 (mining blocks)
             await mineBlocks(60 * blocksPerDay);
-    
+        
+            // Get staking info for both users
             const userA_info = await staker.stakerInfo(userA.address);
             const userB_info = await staker.stakerInfo(userB.address);
-    
-            const userA_stakeAtBlock = userA_info[2]
-            const userB_stakeAtBlock = userB_info[2]
-    
-            const currentBlock_day120 = await ethers.provider.getBlockNumber();
-    
-            // Calculate blocks elapsed
-            const userA_blocksElapsed_day120 = Number(currentBlock_day120) - Number(userA_stakeAtBlock);
-            const userB_blocksElapsed_day120 = Number(currentBlock_day120) - Number(userB_stakeAtBlock);
-    
-            // Buffer means the blocks difference in calculation and actual
-            const buffer_userA_day120 = (userA_blocksElapsed_day120 - 120 * blocksPerDay);
-            const buffer_userB_day120 = (userB_blocksElapsed_day120 - 90 * blocksPerDay);
-    
-            const userA_rewards_day120 = (120 * blocksPerDay + buffer_userA_day120) * rewardsPerBlockDay60;
-            const userB_rewards_day120 = (90 * blocksPerDay + buffer_userB_day120) * rewardsPerBlockDay60;
         
-            // Get actual rewards
+            console.log(`User A info: ${String(userA_info)}`);
+            console.log(`User B info: ${String(userB_info)}`);
+        
+            // Calculate the blocks elapsed for both users
+            const userA_blocksElapsed_day120 = await calculateBlocksElapsed(userA_info[2]);
+            const userB_blocksElapsed_day120 = await calculateBlocksElapsed(userB_info[2]);
+        
+            console.log(`User A blocks elapsed: ${userA_blocksElapsed_day120}`);
+            console.log(`User B blocks elapsed: ${userB_blocksElapsed_day120}`);
+        
+            // Calculate the rewards for both users
+            const [userA_rewards_day120, userB_rewards_day120] = await calculateRewardsDay120(userA_blocksElapsed_day120, userB_blocksElapsed_day120);
+        
+            console.log(`Expected User A rewards: ${userA_rewards_day120}`);
+            console.log(`Expected User B rewards: ${userB_rewards_day120}`);
+        
+            // Validate the calculated rewards against the actual rewards from the contract
             const userA_actualRewards_day120 = await staker.getStakeInfo(userA.address);
             const userB_actualRewards_day120 = await staker.getStakeInfo(userB.address);
-    
-            expect(userB_actualRewards_day120[1]).to.equal(userB_rewards_day120);
+        
             expect(userA_actualRewards_day120[1]).to.equal(userA_rewards_day120);
-    
-            // Fast forward to day 180 (mining blocks)
+            expect(Number(String(userB_actualRewards_day120[1]) / 1e18)).to.equal(Number(String(userB_rewards_day120) / 1e18));
+        
+            // Fast forward to day 180 and update reward per block
             await mineBlocks(60 * blocksPerDay);
-    
-            // Updated reward per block
             await staker.connect(owner).setRewardPerBlock(rewardsPerBlockDay180);
-    
+        
             // Fast forward to day 360 (mining blocks)
             await mineBlocks(180 * blocksPerDay);
-    
-            const currentBlock_day360 = await ethers.provider.getBlockNumber();
-    
-            // Calculate blocks elapsed
-            const userA_blocksElapsed_day360 = Number(currentBlock_day360) - Number(userA_stakeAtBlock);
-            const userB_blocksElapsed_day360 = Number(currentBlock_day360) - Number(userB_stakeAtBlock);
-    
-            // Buffer means the blocks difference in calculation and actual
-            const buffer_userA_day360 = (userA_blocksElapsed_day360 - 360 * blocksPerDay);
-            const buffer_userB_day360 = (userB_blocksElapsed_day360 - 330 * blocksPerDay);
-    
-            const userA_rewards_day360 = (360 * blocksPerDay + buffer_userA_day360) * rewardsPerBlockDay180;
-            const userB_rewards_day360 = (330 * blocksPerDay + buffer_userB_day360) * rewardsPerBlockDay180;
         
-            // Get actual rewards
+            // Calculate blocks elapsed and rewards for day 360
+            const [userA_blocksElapsed_day360, userB_blocksElapsed_day360] = await calculateBlocksElapsedDay360(userA_info[2], userB_info[2]);
+        
+            console.log(`User A blocks elapsed for day 360: ${userA_blocksElapsed_day360}`);
+            console.log(`User B blocks elapsed for day 360: ${userB_blocksElapsed_day360}`);
+        
+            const [userA_rewards_day360, userB_rewards_day360] = await calculateRewardsDay360(userA_blocksElapsed_day360, userB_blocksElapsed_day360);
+        
+            console.log(`Expected User A rewards for day 360: ${userA_rewards_day360}`);
+            console.log(`Expected User B rewards for day 360: ${userB_rewards_day360}`);
+        
+            // Validate the calculated rewards against the actual rewards from the contract
             const userA_actualRewards_day360 = await staker.getStakeInfo(userA.address);
             const userB_actualRewards_day360 = await staker.getStakeInfo(userB.address);
-    
-            expect(userB_actualRewards_day360[1]).to.equal(userB_rewards_day360);
+        
             expect(userA_actualRewards_day360[1]).to.equal(userA_rewards_day360);
+            expect(userB_actualRewards_day360[1]).to.equal(userB_rewards_day360);
         });
+        
     });
-    describe("Scenario 2: Reward Claim and Continuation", function () {
-        it("should calculate reward correctly scenario 2", async function () {
-            const {staker, owner, userA, userB, stakingToken, rewardToken } = await loadFixture(deployStakingFixture);
-    
-            // Mint NFTs to user1
-            await stakingToken.safeMint(userA.address, 1);
-            await stakingToken.safeMint(userB.address, 2);
-    
-            // Approve staker contract to manage user's NFTs
-            await stakingToken.connect(userA).setApprovalForAll(staker.target, true);
-            await stakingToken.connect(userB).setApprovalForAll(staker.target, true);
-    
-            // making sure the staking contract has enough funds
-            const amount = (100*1e18).toString();
-            await rewardToken.connect(owner).mint(staker.target,amount);
-    
-            // UserA stakes 1 NFT on day 1
-            await staker.connect(userA).stake([1]);
-    
-            // Fast forward to day 30 (mining blocks)
-            await mineBlocks(30 * blocksPerDay);
-            // UserB stakes 1 NFT on day 30
-            await staker.connect(userB).stake([2]);
-    
-            // Fast forward to day 60 and update rewards to 20 per block (mining blocks)
-            await mineBlocks(30 * blocksPerDay);
-           
-            // Updated reward per block
-            await staker.connect(owner).setRewardPerBlock(rewardsPerBlockDay60);
-    
-            // Fast forward to day 120 (mining blocks)
-            await mineBlocks(60 * blocksPerDay);
-    
-            const userA_info_day120 = await staker.stakerInfo(userA.address);
-            const userB_info_day120 = await staker.stakerInfo(userB.address);
-    
-            const userA_stakeAtBlock_day120 = userA_info_day120[2]
-            const userB_stakeAtBlock_day120 = userB_info_day120[2]
-    
-            const currentBlock_day120 = await ethers.provider.getBlockNumber();
-    
-            // Calculate blocks elapsed
-            const userA_blocksElapsed_day120 = Number(currentBlock_day120) - Number(userA_stakeAtBlock_day120);
-            const userB_blocksElapsed_day120 = Number(currentBlock_day120) - Number(userB_stakeAtBlock_day120);
-    
-            // Buffer means the blocks difference in calculation and actual
-            const buffer_userA_day120 = (userA_blocksElapsed_day120 - 120 * blocksPerDay);
-            const buffer_userB_day120 = (userB_blocksElapsed_day120 - 90 * blocksPerDay);
-            // console.log(`Buffer userA at 120 day ${buffer_userA_day120}`);
-            // console.log(`Buffer userB at 120 day ${buffer_userB_day120}`);
-    
-            const userA_rewards_day120 = (120 * blocksPerDay + buffer_userA_day120) * rewardsPerBlockDay60;
-            const userB_rewards_day120 = (90 * blocksPerDay + buffer_userB_day120) * rewardsPerBlockDay60;
-            // console.log(`Calculation userA ${userA_rewards_day120}`);
-            // console.log(`Calculation userB ${userB_rewards_day120}`);
-        
-            // Get actual rewards
-            const userA_actualRewards_day120 = await staker.getStakeInfo(userA.address);
-            const userB_actualRewards_day120 = await staker.getStakeInfo(userB.address);
-    
-            expect(userB_actualRewards_day120[1]).to.equal(userB_rewards_day120);
-            expect(userA_actualRewards_day120[1]).to.equal(userA_rewards_day120);
-    
-            // Claiming 
-            await staker.connect(userA).claimRewards();
-            await staker.connect(userB).claimRewards();
-    
-            // Fast forward to day 180 (mining blocks)
-            await mineBlocks(60 * blocksPerDay);
-    
-            // Updated reward per block
-            await staker.connect(owner).setRewardPerBlock(rewardsPerBlockDay180);
-    
-            // Fast forward to day 360 (mining blocks)
-            await mineBlocks(180 * blocksPerDay);
-    
-            const currentBlock_day360 = await ethers.provider.getBlockNumber();
-    
-            const userA_info_day360 = await staker.stakerInfo(userA.address);
-            const userB_info_day360 = await staker.stakerInfo(userB.address);
-    
-            const userA_stakeAtBlock_day360 = userA_info_day360[2]
-            const userB_stakeAtBlock_day360 = userB_info_day360[2]
-    
-            // Calculate blocks elapsed
-            const userA_blocksElapsed_day360 = Number(currentBlock_day360) - Number(userA_stakeAtBlock_day360);
-            const userB_blocksElapsed_day360 = Number(currentBlock_day360) - Number(userB_stakeAtBlock_day360);
-    
-            // Buffer means the blocks difference in calculation and actual
-            const buffer_userA_day360 = (userA_blocksElapsed_day360 - 240 * blocksPerDay);
-            const buffer_userB_day360 = (userB_blocksElapsed_day360 - 240 * blocksPerDay);
-            // console.log(`Buffer userA at 360 day ${buffer_userA_day360}`);
-            // console.log(`Buffer userB at 360 day ${buffer_userB_day360}`);
-    
-            const userA_rewards_day360 = (240 * blocksPerDay + buffer_userA_day360) * rewardsPerBlockDay180;
-            const userB_rewards_day360 = (240 * blocksPerDay + buffer_userB_day360) * rewardsPerBlockDay180;
-            console.log(`Calculation userA at 360 day ${userA_rewards_day360}`);
-            console.log(`Calculation userB at 360 day ${userB_rewards_day360}`);
-        
-            // Get actual rewards
-            const userA_actualRewards_day360 = await staker.getStakeInfo(userA.address);
-            const userB_actualRewards_day360 = await staker.getStakeInfo(userB.address);
-    
-            expect(userB_actualRewards_day360[1]).to.equal(userB_rewards_day360);
-            expect(userA_actualRewards_day360[1]).to.equal(userA_rewards_day360);
-        });
-    })
 });

@@ -26,7 +26,8 @@ contract StakerUpgradeable is
     address public stakingToken;
     uint256 public rewardDelayPeriod;
     uint256 public unbondingPeriod;
-    uint256 public rewardPerBlock;
+    uint256 private currentStakinConditionId;
+
     // @dev List of token-ids ever staked
     uint256[] public indexedTokens;
 
@@ -34,14 +35,19 @@ contract StakerUpgradeable is
     mapping(uint256 => bool) public isIndexed;
 
     /**
-     * @notice
+     * @notice Mapping from token id to stake token info
      */
     mapping(uint256 => StakerToken) public stakerTokenInfo;
 
     /**
-     * @notice
+     * @notice Mapping from staker to staker info
      */
     mapping(address => Staker) public stakerInfo;
+
+    /**
+     * @notice Mapping from condition Id to staking condition.
+     */
+    mapping(uint256 => StakingCondition) public stakingConditions;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -63,9 +69,16 @@ contract StakerUpgradeable is
 
         rewardToken = _rewardToken;
         stakingToken = _stakingToken;
-        rewardPerBlock = _rewardPerBlock;
         rewardDelayPeriod = _rewardDelayPeriod;
         unbondingPeriod = _unbondingPeriod;
+
+        uint256 nextStakingConditionId = ++currentStakinConditionId;
+
+        stakingConditions[nextStakingConditionId] = StakingCondition({
+            rewardPerBlock: _rewardPerBlock,
+            createdAt: block.number
+        });
+
     }
 
     function pause() public onlyOwner {
@@ -81,7 +94,13 @@ contract StakerUpgradeable is
     ) internal override onlyOwner {}
 
     function setRewardPerBlock(uint256 _rewardPerBlock) external onlyOwner {
-        rewardPerBlock = _rewardPerBlock;
+
+        StakingCondition memory condition = stakingConditions[currentStakinConditionId];
+        require(_rewardPerBlock != condition.rewardPerBlock, "reward unchanged.");
+
+        uint256 nextStakingConditionId = ++currentStakinConditionId;
+
+        _setStakingCondition(_rewardPerBlock,nextStakingConditionId);
     }
 
     function setRewardDelayPeriod(uint256 _rewardDelayPeriod) external onlyOwner {
@@ -150,6 +169,7 @@ contract StakerUpgradeable is
             _updateUnclaimedRewardsForStaker(_caller);
         } else {
             stakerInfo[_caller].lastRewardUpdateBlock = uint128(block.number);
+            stakerInfo[_caller].stakingConditionId = currentStakinConditionId;
         }
         for (uint256 i = 0; i < len; ++i) {
             IERC721(_stakingToken).safeTransferFrom(
@@ -269,6 +289,8 @@ contract StakerUpgradeable is
         stakerInfo[_caller].lastRewardUpdateBlock = uint128(block.number);
         stakerInfo[_caller].unclaimedRewards = 0;
         stakerInfo[_caller].lastClaimTime = block.timestamp;
+        stakerInfo[_caller].stakingConditionId = currentStakinConditionId;
+        
 
         _mintRewards(_caller, rewards);
 
@@ -294,6 +316,7 @@ contract StakerUpgradeable is
         uint256 rewards = _calculateRewards(_staker);
         stakerInfo[_staker].unclaimedRewards += rewards;
         stakerInfo[_staker].lastRewardUpdateBlock = uint128(block.number);
+        stakerInfo[_staker].stakingConditionId = currentStakinConditionId;
     }
 
     /**
@@ -306,19 +329,33 @@ contract StakerUpgradeable is
     ) internal view virtual returns (uint256 _rewards) {
         Staker memory staker = stakerInfo[_staker];
 
+        uint256 _stakerConditionId = staker.stakingConditionId;
+        uint256 _currentConditionId = currentStakinConditionId;
+
         uint256 startTime = staker.lastRewardUpdateBlock;
-        uint256 endTime = block.number;
 
-        (bool noOverflowProduct, uint256 rewardsProduct) = Math.tryMul(
-            (endTime - startTime),
-            rewardPerBlock
-        );
-        (bool noOverflowProduct2, uint256 rewards) = Math.tryMul(
-            rewardsProduct,
-            staker.totalStaked
-        );
+        for(uint256 i = _stakerConditionId; i<= _currentConditionId; i++){
+            StakingCondition memory condition = stakingConditions[i];
 
-        _rewards = noOverflowProduct && noOverflowProduct2 ? rewards : _rewards;
+            uint256 endTime = i == _currentConditionId ? block.number : stakingConditions[i+1].createdAt;
+            (bool noOverflowProduct, uint256 rewardsProduct) = Math.tryMul((endTime - startTime) * staker.totalStaked, condition.rewardPerBlock);
+            require(noOverflowProduct, "Reward calculation overflow");
+            (bool noOverflowSum, uint256 rewardsSum) = Math.tryAdd(_rewards, rewardsProduct);
+            require(noOverflowSum, "Rewards sum overflow");
+            _rewards = rewardsSum;
+            startTime = endTime;
+        }
+
+    }
+
+    /// @dev Set staking conditions.
+    function _setStakingCondition(uint256 _rewardsPerBlock,uint256 nextCoditionId) internal virtual {
+        require(_rewardsPerBlock != 0, "reward can't be 0");
+
+        stakingConditions[nextCoditionId] = StakingCondition({
+            rewardPerBlock: _rewardsPerBlock,
+            createdAt: block.number
+        });
     }
 
     /**

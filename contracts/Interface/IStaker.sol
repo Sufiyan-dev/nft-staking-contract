@@ -59,6 +59,7 @@ interface IStaker {
         uint128 lastRewardUpdateBlock; 
         uint256 unclaimedRewards;
         uint256 lastClaimTime;
+        uint256 stakingConditionId;
     }
 
     /**
@@ -71,6 +72,11 @@ interface IStaker {
         address staker;
         uint128 blockAtRequested;
         StakingStatus status;
+    }
+
+    struct StakingCondition {
+        uint256 rewardPerBlock;
+        uint256 createdAt;
     }
 
     /**
